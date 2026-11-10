@@ -121,6 +121,7 @@ export async function runSim(defaults, setup) {
     duration: cfg.duration,
     fps: cfg.fps,
     ready: true,
+    ...(sim.state ? {state: (t) => sim.state(dir.warp(t))} : {}),
     render: (t) => {
       cur = t;
       draw(t);

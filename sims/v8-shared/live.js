@@ -4,6 +4,7 @@
 // drag, a zoom on the wheel, H to hide the overlay. Left alone it plays the film's script as an auto tour with the
 // operator's cursor, looped; a click, drag, wheel or key hands control to the visitor, 25 s of quiet hands it back.
 import {warmComposer} from '../kit/warm.js';
+import {enableKeyboard, prefersStill} from '../kit/access.js';
 import {CAMS, createConsole, CUTS, OVERLAYS, RPM_MAX} from './console.js';
 import {makeConsoleFrame, makeCursor, rpmAt, trackAt, camAt, camName, DURATION, SCRIPT, VIEW_FN} from './film.js';
 import {CYL, ORDER} from './kin.js';
@@ -26,7 +27,7 @@ const playText = (p) => (p >= 1 ? '1× SPEED' : `1 / ${Math.round(1 / p)} SPEED`
 
 const CSS = (top) => `
 html,body{background:#ecedef;overflow:hidden}
-#app{position:absolute!important;inset:auto!important;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0}
+#app{position:fixed!important;inset:auto!important;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0}
 #gl{touch-action:none;cursor:grab}
 #gl.drag{cursor:grabbing}
 .tb{pointer-events:auto;cursor:pointer}
@@ -110,7 +111,9 @@ export function runLive() {
   const pulseBtn = (k) => pulse(...ui.spots[k]);
 
   // ------------------------------------------------------------ the tour
-  const AP = {on: true, t0: 0, loop: 0};
+  const still = prefersStill();
+  if (still) paused = true;
+  const AP = {on: !still, t0: 0, loop: 0};
   let lastInput = 0;
   const startTour = () => {
     AP.on = true;
@@ -269,7 +272,7 @@ export function runLive() {
   );
 
   // ------------------------------------------------------------ the frame
-  startTour();
+  if (!still) startTour();
   let last = performance.now();
   const perf = {n: 0, sum: 0, slow: 0, age: 0};
   const frame = (now) => {
@@ -321,8 +324,8 @@ export function runLive() {
         cursor = {...cursor, x: end.x + (cursor.x - end.x) * k, y: end.y + (cursor.y - end.y) * k};
       }
     } else {
-      if (T - lastInput > IDLE) startTour();
-      since = T - viewAt;
+      if (!still && !paused && T - lastInput > IDLE) startTour();
+      since = still ? 0 : T - viewAt;
       tgt = VIEW_FN[view](since, cyl);
       tgt.az += off.az;
       tgt.el = clamp(tgt.el + off.el, -10, 80);
@@ -335,7 +338,7 @@ export function runLive() {
     if (!paused) th += (rpm / 60) * 360 * dt * PLAYS[playI];
 
     // the camera eases toward its target: the tour's own moves pass through, a loop restart or a click glides
-    const k = 1 - Math.exp(-dt / (AP.on ? 0.18 : 0.45));
+    const k = still ? 1 : 1 - Math.exp(-dt / (AP.on ? 0.18 : 0.45));
     cam.az += wrap(tgt.az - cam.az) * k;
     for (const key of ['tx', 'ty', 'tz', 'el', 'd', 'sx', 'sy']) cam[key] += (tgt[key] - cam[key]) * k;
     st.setCut(cut, CYL[cyl - 1].z * 0.001);
@@ -365,6 +368,7 @@ export function runLive() {
     requestAnimationFrame(frame);
   };
   // every shader compiles at once off the main thread before the first frame (kit/warm.js)
+  enableKeyboard(ui.root);
   warmComposer(st.renderer, st.composer, st.scene, st.camera).then(() => requestAnimationFrame(frame));
   window.LIVE = {st, cam, startTour, takeOver, get tier() {
     return tier;

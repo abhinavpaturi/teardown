@@ -3,6 +3,7 @@
 // display modes, an orbit you drag and a zoom on the wheel. Left alone it plays the film's script as an auto tour with
 // the operator's cursor, looped; a click, drag, wheel or key hands control to the visitor, 25 s of quiet hands it back.
 import {warmComposer} from '../kit/warm.js';
+import {enableKeyboard, prefersStill} from '../kit/access.js';
 import {createConsole, DISPLAY, VIEWS} from './console.js';
 import {camAt, displayAt, DURATION, makeConsoleFrame, makeCursor, mechAt, SCRIPT, seqAt, viewAt, VIEW_FN} from './film.js';
 import {SEQ} from './flight.js';
@@ -25,7 +26,7 @@ const speedK = (v) => (v - SPEED[0]) / (SPEED[1] - SPEED[0]);
 
 const CSS = (top) => `
 html,body{background:#f2e6d2;overflow:hidden}
-#app{position:absolute!important;inset:auto!important;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0}
+#app{position:fixed!important;inset:auto!important;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0}
 #gl{touch-action:none;cursor:grab}
 #gl.drag{cursor:grabbing}
 .bt{pointer-events:auto;cursor:pointer}
@@ -110,7 +111,9 @@ export function runLive() {
   const pulse = (k) => (ring = {t: T, x: ui.spots[k][0], y: ui.spots[k][1]});
 
   // ------------------------------------------------------------ the tour
-  const AP = {on: true, t0: 0, loop: 0, last: -1};
+  const still = prefersStill();
+  if (still) paused = true;
+  const AP = {on: !still, t0: 0, loop: 0, last: -1};
   let lastInput = 0;
   const startTour = () => {
     AP.on = true;
@@ -254,7 +257,7 @@ export function runLive() {
   );
 
   // ------------------------------------------------------------ the frame
-  startTour();
+  if (!still) startTour();
   let last = performance.now();
   const perf = {n: 0, sum: 0, slow: 0, age: 0};
   const frame = (now) => {
@@ -302,9 +305,9 @@ export function runLive() {
         cursor = {...cursor, x: end.x + (cursor.x - end.x) * k, y: end.y + (cursor.y - end.y) * k};
       }
     } else {
-      if (T - lastInput > IDLE) startTour();
+      if (!still && !paused && T - lastInput > IDLE) startTour();
       if (!paused) tau = Math.min(SEQ[seq].dur, tau + dt * speed);
-      since = T - viewAt0;
+      since = still ? 0 : T - viewAt0;
       tgt = VIEW_FN[view](since);
       tgt.az += off.az + (disp.orbit.on ? 14 * (T - disp.orbit.t) : 0);
       tgt.el = clamp(tgt.el + off.el, -20, 88);
@@ -319,7 +322,7 @@ export function runLive() {
     wheelW = m.height < 0.005 ? m.speed / G.wheelR : wheelW * Math.exp(-dt / 1.2);
     roll += live ? wheelW * dt * (AP.on ? 1 : speed) : 0;
 
-    const k = 1 - Math.exp(-dt / (AP.on ? 0.18 : 0.45));
+    const k = still ? 1 : 1 - Math.exp(-dt / (AP.on ? 0.18 : 0.45));
     cam.az += wrap(tgt.az - cam.az) * k;
     for (const key of ['tx', 'ty', 'tz', 'el', 'd', 'sx', 'sy']) cam[key] += (tgt[key] - cam[key]) * k;
     const explode = eased('exploded', 0.8);
@@ -341,6 +344,7 @@ export function runLive() {
     requestAnimationFrame(frame);
   };
   // every shader compiles at once off the main thread before the first frame (kit/warm.js)
+  enableKeyboard(ui.root);
   warmComposer(st.renderer, st.composer, st.scene, st.camera).then(() => requestAnimationFrame(frame));
   window.LIVE = {st, cam, startTour, takeOver, get tier() {
     return tier;

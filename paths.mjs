@@ -29,4 +29,12 @@ export const OUT = path.resolve(process.env.TEARDOWN_OUT || 'teardown-out');
 export const DIST = path.join(OUT, 'dist');
 
 export const fromDeps = (id) => createRequire(path.join(DEPS, 'x.js'))(id);
+export const hasDep = (id) => {
+  try {
+    createRequire(path.join(DEPS, 'x.js')).resolve(id);
+    return true;
+  } catch {
+    return false;
+  }
+};
 export const playwright = () => fromDeps('playwright');

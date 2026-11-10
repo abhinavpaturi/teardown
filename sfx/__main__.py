@@ -28,6 +28,39 @@ def load_cues(path):
     return cues
 
 
+def check_timeline(tl):
+    """The same rules as timeline.mjs: a number that can't be a moment in the film is a mistake, not a sound after the end."""
+    dur = tl.get("duration")
+    if not isinstance(dur, (int, float)) or dur <= 0:
+        sys.exit("timeline: duration must be positive seconds")
+
+    def fail(where, t):
+        sys.exit(f"timeline: {where} = {t} is outside the film (0 to {dur} s). If it isn't a time, move it under \"data\".")
+
+    if "schemaVersion" in tl or "events" in tl:
+        if tl.get("schemaVersion") != 1 or not isinstance(tl.get("events"), list):
+            sys.exit("timeline: use schemaVersion 1 with an events array")
+        for e in tl["events"]:
+            if not isinstance(e.get("t"), (int, float)) or not 0 <= e["t"] <= dur:
+                fail(e.get("id", "?"), e.get("t"))
+        return
+
+    def walk(v, where):
+        if isinstance(v, bool):
+            return
+        if isinstance(v, (int, float)):
+            if not 0 <= v <= dur:
+                fail(where, v)
+        elif isinstance(v, list):
+            for i, x in enumerate(v):
+                walk(x, f"{where}[{i}]")
+        elif isinstance(v, dict):
+            for k, x in v.items():
+                walk(x, f"{where}.{k}" if where else k)
+
+    walk({k: v for k, v in tl.items() if k not in ("duration", "fps", "data")}, "")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="python run_sfx.py", description="Render a cue sheet to a mastered WAV.")
     ap.add_argument("cues", nargs="?", help="cue sheet: a .py file with score(mix, tl)")
@@ -49,6 +82,7 @@ def main():
     out = args.out or getattr(cues, "OUT", os.path.join(os.environ.get("TEARDOWN_OUT", "teardown-out"), f"{stem}.wav"))
     with open(timeline, encoding="utf8") as f:
         tl = json.load(f)
+    check_timeline(tl)
 
     mix = Mix(tl["duration"], seed=getattr(cues, "SEED", 11))
     cues.score(mix, tl)

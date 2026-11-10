@@ -1,0 +1,11 @@
+{
+  "duration": 16,
+  "spoolUp": 1,
+  "glassOn": 3,
+  "front": 6,
+  "explode": 8.5,
+  "assemble": 11,
+  "spoolDown": 11,
+  "hero": 12,
+  "glassOff": 14.5
+}

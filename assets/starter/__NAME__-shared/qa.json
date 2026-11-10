@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "viewports": [{"width": 1600, "height": 900}, {"width": 390, "height": 844}],
+  "steps": [
+    {"name": "a view takes over from the tour", "action": "click", "selector": "#bt-front", "expect": {"view": {"equals": "front"}, "tour": {"equals": false}}},
+    {"name": "pause", "action": "click", "selector": "#bt-play", "expect": {"paused": {"equals": true}}},
+    {"name": "paused means the crank stops", "action": "wait", "waitMs": 200, "expect": {"th": {"changed": false}}},
+    {"name": "the throttle keeps the crank where it is", "action": "fill", "selector": "#throttle", "value": "1000", "expect": {"rpm": {"equals": 4200}, "th": {"changed": false}}},
+    {"name": "resume", "action": "click", "selector": "#bt-play", "waitMs": 150, "expect": {"paused": {"equals": false}, "th": {"changed": true}}},
+    {"name": "glass", "action": "click", "selector": "#bt-glass", "expect": {"glass": {"equals": true}}},
+    {"name": "explode", "action": "click", "selector": "#bt-explode", "withinMs": 3000, "expect": {"explode": {"min": 0.99}}},
+    {"name": "explode leaves the mechanics alone", "action": "wait", "expect": {"rpm": {"equals": 4200}, "paused": {"equals": false}}},
+    {"name": "reassemble", "action": "click", "selector": "#bt-explode", "withinMs": 3000, "expect": {"explode": {"max": 0.01}}},
+    {"name": "orbit", "action": "drag", "selector": "#gl", "delta": [70, 0], "expect": {"az": {"max": -0.2}}},
+    {"name": "zoom from the keyboard", "action": "press", "selector": "#gl", "key": "+", "expect": {"zoom": {"changed": true}}},
+    {"name": "pinch to zoom", "action": "pinch", "only": "phone", "selector": "#gl", "scale": 2, "expect": {"zoom": {"max": 0.7}}},
+    {"name": "back to the first view", "action": "click", "selector": "#bt-hero", "expect": {"view": {"equals": "hero"}}},
+    {"name": "glass off", "action": "click", "selector": "#bt-glass", "expect": {"glass": {"equals": false}}},
+    {"name": "back to the tour", "action": "click", "selector": ".tourchip", "expect": {"tour": {"equals": true}}}
+  ]
+}

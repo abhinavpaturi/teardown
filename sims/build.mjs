@@ -8,17 +8,26 @@
 //   node sims/build.mjs ./my-machine    your own sim: any folder with a main.js. Import the kit as
 //                                       'teardown-kit/runtime.js', 'teardown-kit/util.js' and so on.
 //
-// An entry may carry build.json with {"swap": {"heavy.glb": "light.glb"}}: every import of a file named heavy.glb is
+// A folder next to you wins over an example of the same name. Every build leaves <name>.build.json: bytes, SHA-256, whether the
+// page is one file, and what takes the room.
+//
+// An entry may carry build.json with {"title": "The page's name"}, {"css": "../style.css"} and {"kitCss": false} (use your own
+// stylesheet, without the kit's full-screen layout), and {"swap": {"heavy.glb": "light.glb"}}: every import of a file named heavy.glb is
 // served from light.glb in the same folder (a site page with lighter models than its film). {"external": {...}} does
 // the same but leaves the model out of the page: the import becomes the string "url:light.glb", the file is copied
 // next to the page and listed in <name>.assets.json (the site build copies those too). The page stays small enough
 // for link crawlers (X reads the share card from it). {"files": [...]} copies more files from node_modules next to the
 // page the same way (decoders a loader fetches at runtime).
+import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DEPS, DIST, fromDeps} from '../paths.mjs';
 
+if (process.argv.includes('--help')) {
+  console.log('Usage: node sims/build.mjs [example-name | ./entry-folder ...]\nWrites offline HTML, plus <name>.build.json with its size, hash and largest inputs.');
+  process.exit(0);
+}
 const esbuild = fromDeps('esbuild');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -52,7 +61,8 @@ const kitPlugin = {
 };
 
 for (const arg of names) {
-  const dir = fs.existsSync(path.join(HERE, arg, 'main.js')) ? path.join(HERE, arg) : path.resolve(arg);
+  // your own folder first: a machine you named v8 must not build the bundled V8
+  const dir = fs.existsSync(path.join(path.resolve(arg), 'main.js')) ? path.resolve(arg) : path.join(HERE, arg);
   if (!fs.existsSync(path.join(dir, 'main.js'))) {
     console.error(`no main.js in ${dir}`);
     process.exit(1);
@@ -104,20 +114,23 @@ for (const arg of names) {
     write: false,
     target: 'es2022',
     legalComments: 'none',
+    metafile: true,
     loader: {'.glb': 'base64', '.woff2': 'base64'},
     logLevel: 'warning',
   });
   const js = res.outputFiles[0].text.replace(/<\/script/g, '<\\/script');
-  const css = fs.existsSync(path.join(dir, 'style.css')) ? fs.readFileSync(path.join(dir, 'style.css'), 'utf8') : '';
+  const cssPath = path.resolve(dir, bcfg.css || 'style.css');
+  if (bcfg.css && !fs.existsSync(cssPath)) throw new Error(`Missing project CSS: ${cssPath}`);
+  const css = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
   const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${name}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover">
+<title>${String(bcfg.title || name).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c])}</title>
 <style>
 ${FONTS}
-${KIT_CSS}
+${bcfg.kitCss === false ? '' : KIT_CSS}
 ${css}
 </style>
 </head>
@@ -137,5 +150,11 @@ ${js}
     for (const a of assets) fs.copyFileSync(a, path.join(DIST, path.basename(a)));
     fs.writeFileSync(listFile, JSON.stringify(assets.map((a) => path.basename(a))));
   } else if (fs.existsSync(listFile)) fs.rmSync(listFile);
-  console.log(`${out}  ${(html.length / 1024).toFixed(0)} KB  ${Date.now() - t0} ms`);
+  const inputs = Object.values(res.metafile.outputs).flatMap((o) => Object.entries(o.inputs || {})).map(([file, v]) => ({file: file.replace(/.*node_modules\//, ''), bytes: v.bytesInOutput})).sort((x, y) => y.bytes - x.bytes);
+  const report = {schemaVersion: 1, output: out, bytes: Buffer.byteLength(html), sha256: createHash('sha256').update(html).digest('hex'), singleFile: assets.length === 0,
+    assets: assets.map((a) => ({file: path.basename(a), bytes: fs.statSync(a).size})), largestInputs: inputs.slice(0, 25)};
+  fs.writeFileSync(path.join(DIST, `${name}.build.json`), JSON.stringify(report, null, 2) + '\n');
+  console.log(`${out}  ${(report.bytes / 1024).toFixed(0)} KB  ${Date.now() - t0} ms`);
+  // over the link-preview guideline: say what is taking the room instead of leaving it to guesswork
+  if (report.bytes > 1024 * 1024) console.log(`  over 1 MB (fine offline, link crawlers may skip the card). Largest: ${inputs.slice(0, 6).map((i) => `${path.basename(i.file)} ${(i.bytes / 1024).toFixed(0)} KB`).join(', ')}`);
 }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "scope": {"machine": "__TITLE__", "variant": "Starter slider-crank, not a real machine"},
+  "parameters": [
+    {"id": "r", "value": 0.045, "unit": "m", "basis": "estimated", "limitations": "Demo value: replace it with a sourced one"},
+    {"id": "l", "value": 0.145, "unit": "m", "basis": "estimated", "limitations": "Demo value"},
+    {"id": "bore", "value": 0.082, "unit": "m", "basis": "estimated", "limitations": "Demo value"}
+  ],
+  "assets": [],
+  "limitations": [
+    "Kinematics only: no combustion, force, friction or heat",
+    "The exploded layout is an illustration, not a service procedure"
+  ]
+}

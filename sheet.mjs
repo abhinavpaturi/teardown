@@ -13,8 +13,13 @@ import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import {FFMPEG, FFPROBE} from './paths.mjs';
+import {reviewTimes} from './timeline.mjs';
 
 const argv = process.argv.slice(2);
+if (argv.includes('--help')) {
+  console.log('Usage: node sheet.mjs --video f.mp4 (--timeline timeline.json | --every SEC [--from A --to B] | T T T)\nOptions: --offset 0.3 --cols 4 --rows 2 --size 540 --name beats\nSheets land next to the video in <video>_sheets/.');
+  process.exit(0);
+}
 const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   if (i === -1) return fallback;
@@ -48,16 +53,9 @@ const beats = () => {
     console.error('pass timestamps, --every, or --timeline <file.json>');
     process.exit(1);
   }
-  const tl = JSON.parse(fs.readFileSync(timelinePath, 'utf8'));
-  const out = [];
-  const walk = (v, key) => {
-    if (key === 'fps' || key === 'duration') return;
-    if (typeof v === 'number') out.push(v);
-    else if (Array.isArray(v)) v.forEach((x) => walk(x));
-    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, k));
-  };
-  walk(tl);
-  return out.map((t) => t + offset);
+  const {times: t, fallback} = reviewTimes(JSON.parse(fs.readFileSync(timelinePath, 'utf8')), duration);
+  if (fallback) console.log(`${path.basename(timelinePath)} has no beats beyond its duration: one tile every 2 s`);
+  return t.map((x) => x + offset);
 };
 
 let times;
@@ -66,6 +64,7 @@ if (argv.length) {
   name ??= 'picked';
 } else if (every) {
   const end = to === null ? duration : Number(to);
+  if (!Number.isFinite(Number(every)) || Number(every) <= 0) throw new Error('--every must be positive');
   times = [];
   for (let t = from; t <= end + 1e-6; t += Number(every)) times.push(Number(t.toFixed(3)));
   name ??= `every${every}`;
@@ -80,6 +79,8 @@ times = [...new Set(times.map((t) => Math.min(Math.max(t, 0), duration - eps).to
   .map(Number)
   .sort((a, b) => a - b);
 
+if (![cols, rows, size].every((n) => Number.isInteger(n) && n > 0)) throw new Error('--cols, --rows and --size must be positive whole numbers');
+if (!times.length || times.some((t) => !Number.isFinite(t))) throw new Error('No valid frame times');
 const base = video.replace(/\.[^.]+$/, '') + '_sheets';
 const dir = path.join(base, name);
 fs.rmSync(dir, {recursive: true, force: true});
@@ -91,8 +92,9 @@ let labels = true;
 times.forEach((t, i) => {
   const file = path.join(dir, `${String(i).padStart(3, '0')}.png`);
   const scale = `scale=${size}:-2`;
-  // Consolas ships with Windows; the colon in the drive letter is escaped for the filter parser.
-  const label = `drawtext=fontfile='C\\:/Windows/Fonts/consola.ttf':text='t=${t.toFixed(2)}':x=10:y=10:fontsize=${Math.round(
+  // a monospace font each platform ships; the colon in a drive letter is escaped for the filter parser
+  const face = {win32: "fontfile='C\\:/Windows/Fonts/consola.ttf'", darwin: "fontfile='/System/Library/Fonts/Menlo.ttc'"}[process.platform] ?? "font='monospace'";
+  const label = `drawtext=${face}:text='t=${t.toFixed(2)}':x=10:y=10:fontsize=${Math.round(
     size / 24,
   )}:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=6`;
   const grab = (vf) => ffmpeg(['-ss', String(t), '-i', video, '-frames:v', '1', '-vf', vf, file]);
@@ -108,6 +110,7 @@ times.forEach((t, i) => {
   grab(scale);
 });
 
+fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({video, timestamps: times, labels}, null, 2));
 const perSheet = cols * rows;
 const sheets = [];
 for (let s = 0; s * perSheet < times.length; s++) {

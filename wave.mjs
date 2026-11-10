@@ -11,8 +11,13 @@ import {execFileSync, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import {FFMPEG, FFPROBE} from './paths.mjs';
+import {timelineTimes} from './timeline.mjs';
 
 const argv = process.argv.slice(2);
+if (argv.includes('--help')) {
+  console.log('Usage: node wave.mjs <file.wav|file.mp4> [--timeline timeline.json]\nWrites <input>_wave.png with every beat drawn on it, and prints loudness and true peak.');
+  process.exit(0);
+}
 const ti = argv.indexOf('--timeline');
 const timelinePath = ti === -1 ? null : path.resolve(argv.splice(ti, 2)[1]);
 if (!argv[0] || !fs.existsSync(argv[0])) {
@@ -29,14 +34,7 @@ const H = 280;
 const probed = Number(execFileSync(FFPROBE, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', input]).toString());
 const tl = timelinePath ? JSON.parse(fs.readFileSync(timelinePath, 'utf8')) : {duration: probed};
 tl.duration ??= probed;
-const beats = [];
-const walk = (v, key) => {
-  if (key === 'fps' || key === 'duration') return;
-  if (typeof v === 'number') beats.push(v);
-  else if (Array.isArray(v)) v.forEach((x) => walk(x));
-  else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, k));
-};
-walk(tl);
+const beats = timelineTimes(tl);
 
 const marks = [...new Set(beats)]
   .map((t) => `drawbox=x=${Math.round((t / tl.duration) * W)}:y=0:w=2:h=ih:color=0xD97757@0.9:t=fill`)
@@ -56,10 +54,12 @@ execFileSync(FFMPEG, [
 const r = spawnSync(FFMPEG, ['-hide_banner', '-nostats', '-i', input, '-af', 'ebur128=peak=true', '-f', 'null', '-'], {
   encoding: 'utf8',
 });
+if (r.error || r.status !== 0) throw new Error(r.error?.message || r.stderr);
 const summary = r.stderr.slice(r.stderr.lastIndexOf('Summary'));
 const lufs = Number(summary.match(/I:\s+(-?[\d.]+) LUFS/)?.[1]);
 const peak = Number(summary.match(/Peak:\s+(-?[\d.]+) dBFS/)?.[1]);
 
+if (!Number.isFinite(lufs) || !Number.isFinite(peak)) throw new Error('No finite loudness measurements: does this file have an audio stream?');
 console.log(`waveform: ${png} (${beats.length} beats in coral, grid = 1s)`);
 console.log(`loudness: ${lufs} LUFS integrated (target ${TARGET_LUFS} ±1)`);
 console.log(`true peak: ${peak} dBFS (keep ≤ ${MAX_TRUE_PEAK})`);
